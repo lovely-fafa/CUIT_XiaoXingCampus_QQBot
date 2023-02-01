@@ -105,11 +105,13 @@
     提交QQ：123456789
     ```
 
-## 2 安装
+## 2 学习路线
+
+### 2.1 入门
 
 https://www.bilibili.com/video/BV1aZ4y1f7e2
 
-### 2.1 依赖库
+#### 2.1.1 依赖库
 
 - https://github.com/mrs4s/go-cqhttp/releases
 
@@ -117,7 +119,7 @@ https://www.bilibili.com/video/BV1aZ4y1f7e2
 
   pip install nonebot-adapter-onebot
 
-### 2.2 备忘记录
+#### 2.1.2 备忘记录
 
 > 快跑 这个甲方不懂技术 预算低
 >
@@ -178,3 +180,8 @@ https://www.bilibili.com/video/BV1aZ4y1f7e2
   screen -r name
   ```
 
+### 2.2 文档
+
+- [官方文档](https://nb2.baka.icu/docs/api/index)
+- [github大佬](https://github.com/botuniverse/onebot-11)
+- [```go-cqhttp```](https://docs.go-cqhttp.org/api)
