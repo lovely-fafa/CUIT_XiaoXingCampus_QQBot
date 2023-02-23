@@ -24,7 +24,8 @@ from . import config
 initial_day = datetime.now().day
 initial_id = 0
 
-msg_dict = {}  # 显然这个地方是很笨的方法 我们应该存数据库 但是我不会
+if not os.path.exists(r'./data/sendMessageToGroup/file'):
+    os.mkdir(r'./data/sendMessageToGroup/file')
 
 help_msg_matcher = on_regex(r'^帮助$', priority=5, block=True)
 
