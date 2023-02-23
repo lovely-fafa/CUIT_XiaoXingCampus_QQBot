@@ -6,8 +6,10 @@
 # @QQ      : 1315337973
 # @File    : sendMessageToGroup.py
 # @Software: PyCharm
-import os
+
 # 可参考插件商店的 nonebot_plugin_forwarder 转发姬插件
+
+import os
 from time import localtime, sleep
 from random import random
 from datetime import datetime
