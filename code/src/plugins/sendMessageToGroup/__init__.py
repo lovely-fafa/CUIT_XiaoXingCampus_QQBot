@@ -13,7 +13,6 @@ import os
 from time import localtime, sleep
 from random import random
 from datetime import datetime
-from io import BytesIO
 
 import requests
 from nonebot import logger
@@ -104,6 +103,7 @@ async def _(bot: Bot, notice: NoticeEvent):
                                group_id=gid,
                                file=f'{os.path.abspath(f"./data/sendMessageToGroup/file/{file_name}")}',
                                name=file_name)
+            sleep(random())
 
 
 # recall_msg_matcher = on_notice(priority=1, block=False)  # tmd 这个地方 撤回是 notice 事件 怎么会是 on_message 啊
