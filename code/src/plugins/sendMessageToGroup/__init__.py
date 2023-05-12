@@ -106,13 +106,14 @@ async def matching_send_msg(bot: Bot, event: PrivateMessageEvent):
 
     # 准备转发
     msg_send = f'{message_num}.{msg}\n提交来源：{nickname}\n提交QQ：{from_id}'
-    msg_dict = {k: msg_send for k in config['forwarder_destination_group']}
 
     # 是否有 艾特
     if re.search(r'艾特(\d+)', msg):
         for aite_num in re.findall(r'艾特(\d+)', msg):
             qq_num = message_dao.get_qq_num_by_msg_num(c, int(aite_num))
             msg_send = re.sub(rf'艾特{aite_num}', f'[CQ:at,qq={qq_num}] ', msg_send)
+
+    msg_dict = {k: msg_send for k in config['forwarder_destination_group']}
 
     # 是否有 回复
     if re.search(r'^回(\d+)\D', msg):
