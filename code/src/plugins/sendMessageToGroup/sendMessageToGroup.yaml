@@ -1,0 +1,22 @@
+# 源信息群 d
+forwarder_source_group:
+  None
+
+# 目标群
+forwarder_destination_group:
+  # 小内测
+  - 726065200
+  - 273171267
+
+# 黑名单
+
+# forwarder_prefix = []  # 触发转发的消息前缀 ( [""] 则为全部转发)
+# forwarder_explict = []  # 指定只有特定人消息被转发 ( [""] 则为全部转发)
+
+
+help_msg_file:
+  ./data/sendMessageToGroup/text/help_text.txt
+
+sqlite3_file:
+  ./data/sendMessageToGroup/data/msg.db
+
