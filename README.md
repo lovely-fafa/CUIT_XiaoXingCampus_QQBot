@@ -56,6 +56,20 @@ https://www.bilibili.com/video/BV1aZ4y1f7e2
 
   pip install nonebot-adapter-onebot
 
+- 安装适配器解决
+
+  `pip install nonebot-adapter-onebot`
+
+- 如果还是报这个错，上大招，卸载重装
+
+  ```
+  pip uninstall nonebot
+  pip uninstall nonebot2
+  pip uninstall nb-cli
+  pip install nb-cli
+  pip install nonebot-adapter-onebot
+  ```
+
 #### 2.1.2 备忘记录
 
 > 快跑 这个甲方不懂技术 预算低
