@@ -7,25 +7,37 @@
 # @GitHub  : https://github.com/lovely-fafa
 # @File    : message_dao.py
 # @Software: PyCharm
+
 from datetime import datetime
-from sqlite3 import Cursor
 from nonebot import logger
 
 
-def save(c: Cursor, **kwargs):
-    logger.info(f'保存消息：{kwargs}')
+def save(conn, **kwargs):
+    c = conn.cursor()
+    logger.debug(f'保存消息 | msg={kwargs}')
     sql = """
-    insert into message (id, message_num, message_id_qq, qq_num, message_type, 
-                         content, file_root, is_anonymous, create_time)
-    values (?,?,?,?,?,?,?,?,?);
+    insert into msg_receive_message (message_num, tencent_id, user_qq_num, message_type, content, file_root, create_time, update_time)
+    values (%s, %s, %s, %s, %s, %s, %s, %s);
     """
-    c.execute(sql, (kwargs['id'], kwargs['message_num'], kwargs['message_id_qq'], kwargs['qq_num'],
-                    kwargs['message_type'], kwargs['content'], kwargs['file_root'], kwargs['is_anonymous'],
-                    datetime.strftime(datetime.now(), '%Y-%m-%d %H:%M:%S')))
+    c.execute(sql, (kwargs['message_num'], kwargs['tencent_id'], kwargs['user_qq_num'],
+                    kwargs['message_type'], kwargs['content'], kwargs['file_root'],
+                    datetime.now(), datetime.now()))
+    last_id = c.lastrowid
+    c.close()
+    conn.commit()
+    return last_id
 
 
-def get_qq_num_by_msg_num(c, message_num) -> int:
-    sql = """
-    select qq_num from message where message_num = ?;
+def get_qq_num_by_msg_num(conn, message_num) -> int:
     """
-    return c.execute(sql, (message_num, )).fetchone()[0]
+    根据消息编号 返回发消息人的 QQ号 用于艾特功能
+    :param c:
+    :param message_num:
+    :return:
+    """
+    c = conn.cursor()
+    c.execute('select user_qq_num from msg_receive_message where message_num = %s order by create_time desc limit 1',
+              (message_num, ))
+    data = c.fetchall()[0][0]
+    c.close()
+    return data

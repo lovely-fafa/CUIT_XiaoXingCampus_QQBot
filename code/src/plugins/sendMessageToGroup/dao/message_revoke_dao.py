@@ -9,12 +9,14 @@
 # @Software: PyCharm
 
 from datetime import datetime
-from sqlite3 import Cursor
 
 
-def save(c: Cursor, data):
+def save(conn, tencent_id):
+    c = conn.cursor()
     sql = """
-    insert into message_revoke (id, message_id, create_time) 
-    VALUES (?,?,?)
+    insert into msg_revoke (message_id, create_time, update_time) 
+    VALUES ((select id from msg_receive_message where tencent_id = %s),%s,%s)
     """
-    c.execute(sql, data + [datetime.strftime(datetime.now(), '%Y-%m-%d %H:%M:%S')])
+    c.execute(sql, (tencent_id, datetime.now(), datetime.now()))
+    c.close()
+    conn.commit()

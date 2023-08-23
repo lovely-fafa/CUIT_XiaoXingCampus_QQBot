@@ -17,6 +17,8 @@ forwarder_destination_group:
 help_msg_file:
   ./data/sendMessageToGroup/text/help_text.txt
 
-sqlite3_file:
-  ./data/sendMessageToGroup/data/msg.db
+sql:
+  name: xiaoxing_bot
+  username: root
+  password: 555555s
 

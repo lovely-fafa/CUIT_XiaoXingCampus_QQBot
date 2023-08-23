@@ -8,33 +8,35 @@
 # @Software: PyCharm
 
 # 可参考插件商店的 nonebot_plugin_forwarder 转发姬插件
+
 import os
 import re
 from time import sleep
 from random import random
-import sqlite3
-import subprocess
 
 import requests
-import snowflake.client
 from nonebot import logger
 from nonebot import on_message, on_notice, on_regex
 from nonebot.adapters.onebot.v11 import Bot, PrivateMessageEvent, FriendRecallNoticeEvent, Event, NoticeEvent, Message
 from nonebot_plugin_apscheduler import scheduler
 
-from .tools import init, get_msg_id
+from .dao.target_group_dao import get_target_group_num
+from .tools import init, get_msg_id, get_connect_cursor, init_fold
 from .dao import user_dao, message_dao, message_group_dao, message_revoke_dao
 
-# 读入配置文件
-config = init()
-sqlite = config['sqlite3_file']
-# 数据库连接
-conn = sqlite3.connect(sqlite)
-c = conn.cursor()
+logger.info('初始化 转发 插件')
+logger.info('连接数据库...')
+conn = get_connect_cursor()
+logger.info('连接数据库成功')
 
 # 初始化
-subprocess.Popen('snowflake_start_server')  # 雪花算法
-message_num = get_msg_id(c)
+logger.info('获取消息序号...')
+message_num = get_msg_id(conn)
+logger.info('获取消息序号成功')
+
+logger.info('创建依赖文件夹...')
+init_fold()
+logger.info('创建依赖文件夹成功')
 
 
 # 定时器
@@ -48,18 +50,23 @@ help_msg_matcher = on_regex(r'^帮助$', priority=5, block=True)
 change_nickname = on_regex(r'^昵称：(.*?)', priority=5, block=True)
 send_msg_matcher = on_message(priority=10, block=False)  # 优先级数字越小越先响应
 file_msg_matcher = on_notice(priority=16, block=True)
-recall_msg_matcher = on_notice(priority=1, block=False)  # tmd 这个地方 撤回是 notice 事件 怎么会是 on_message 啊
+revoke_msg_matcher = on_notice(priority=1, block=False)  # tmd 这个地方 撤回是 notice 事件 怎么会是 on_message 啊
+
+logger.info('成功载入 转发 插件')
 
 
 @help_msg_matcher.handle()
 async def _():
-    await help_msg_matcher.finish(Message(config['help_msg']))
+    await help_msg_matcher.finish(Message('帮助'))  # todo: 帮助问题
 
 
 @change_nickname.handle()
 async def change_nickname_fun(event: Event):
-    nickname = user_dao.change_nickname(c, event.user_id, str(event.message))
-    conn.commit()
+    qq_num = event.user_id
+    nickname = re.sub(r'昵称：', '', str(event.message))
+    logger.info(f'更改昵称 |  qq_num={qq_num} nickname={nickname}')
+
+    user_dao.change_nickname(conn, qq_num, nickname)
     await change_nickname.finish(f'昵称更改为：{nickname}')
 
 
@@ -74,70 +81,72 @@ async def matching_send_msg(bot: Bot, event: PrivateMessageEvent):
     global message_num
     message_num += 1
 
-    from_id = event.user_id
+    qq_num = event.user_id
+    if qq_num in user_dao.get_blacklist(conn):
+        return
     msg = str(event.message)
 
     # 查询用户数据
-    user_info = user_dao.select_by_qq_num(c, from_id)
-    if user_info is None:
-        user_id = snowflake.client.get_guid()
-        is_anonymous = 0
+    user_info = user_dao.select_by_qq_num(conn, qq_num)  # (('123',),)
+    if not user_info:
         nickname = event.sender.nickname
-        user_dao.save(c, user_id, from_id)
-        conn.commit()
+        user_dao.save(conn, qq_num, nickname)
     else:
-        is_anonymous = user_info[3]
-        nickname = event.sender.nickname if user_info[2] is None else user_info[2]
+        nickname = event.sender.nickname if not user_info else user_info[0][0]
 
     # 保存消息
-    logger.debug(f'预转发消息：{msg} | 来源：{from_id}')
-    message_id = snowflake.client.get_guid()
+    logger.info(f'预转发消息 | msg_num={message_num} qq_num={qq_num} msg={msg}')
     message_save = {
-        'id': message_id,
         'message_num': message_num,
-        'message_id_qq': event.message_id,
-        'qq_num': from_id,
+        'tencent_id': event.message_id,
+        'user_qq_num': qq_num,
         'message_type': 1,
         'content': msg,
         'file_root': None,
-        'is_anonymous': is_anonymous,
     }
-    message_dao.save(c, **message_save)
+    message_id = message_dao.save(conn, **message_save)
 
     # 准备转发
-    msg_send = f'{message_num}.{msg}\n提交来源：{nickname}\n提交QQ：{from_id}'
+    msg_send = f'{message_num}.{msg}\n提交来源：{nickname}\n提交QQ：{qq_num}'
 
     # 是否有 艾特
-    if re.search(r'艾特(\d+)', msg):
-        for aite_num in re.findall(r'艾特(\d+)', msg):
-            qq_num = message_dao.get_qq_num_by_msg_num(c, int(aite_num))
-            msg_send = re.sub(rf'艾特{aite_num}', f'[CQ:at,qq={qq_num}] ', msg_send)
+    for aite_num in re.findall(r'艾特(\d+)', msg):
+        qq_num = message_dao.get_qq_num_by_msg_num(conn, int(aite_num))
+        msg_send = re.sub(rf'艾特{aite_num}', f'[CQ:at,qq={qq_num}] ', msg_send)
 
-    msg_dict = {k: msg_send for k in config['forwarder_destination_group']}
+    message_dict = {k: msg_send for k in get_target_group_num(conn)}
 
     # 是否有 回复
-    if re.search(r'^回(\d+)\D', msg):
-        reply_msg_id = re.search(r'^回(\d+)\D', msg).group(1)
-        msg_ids_bot = message_group_dao.get_group_msg_id_group_id_by_message_num(c, int(reply_msg_id))
-        msg_send_clean = re.sub(r'^回\d+', '', msg_send)
-        for group_num, msg_id_bot in msg_ids_bot:
-            msg_dict[group_num] = f'[CQ:reply,id={msg_id_bot}] {msg_send_clean}'
+    if search := re.search(r'^回(\d+)\D', msg):
+        reply_msg_id = search.group(1)
+        msg_ids_bot = message_group_dao.get_group_msg_id_group_id_by_message_num(conn, int(reply_msg_id))
+        for group_num, tencent_id in msg_ids_bot:
+            message_dict[group_num] = f'[CQ:reply,id={tencent_id}] {msg_send}'
 
     message_group_save = []
-    for gid, msg in msg_dict.items():
-        logger.debug(f'消息转发至：{gid}')
-        send_group_msg_result = await bot.send_group_msg(group_id=int(gid),
-                                                         message=msg,
-                                                         auto_escape=False)
-        message_group_save.append([
-            snowflake.client.get_guid(),
-            message_id,
-            gid,
-            send_group_msg_result['message_id']
-        ])
+    for group_num, msg in message_dict.items():
+
+        try:
+            send_group_msg_result = await bot.send_group_msg(group_id=group_num,
+                                                             message=msg,
+                                                             auto_escape=False)
+            logger.debug(f'消息转发成功 | group_num={group_num}  msg_num={message_num}')
+            message_group_save.append([
+                message_id,
+                group_num,
+                send_group_msg_result['message_id'],
+                1
+            ])
+        except Exception as e:
+            logger.warning(f'消息转发失败 | group_num={group_num}  msg_num={message_num} e={e}')
+            message_group_save.append([
+                message_id,
+                group_num,
+                None,
+                0
+            ])
         sleep(random())
-    message_group_dao.save(c, message_group_save)
-    conn.commit()
+    message_group_dao.save(conn, message_group_save)
 
 
 @file_msg_matcher.handle()
@@ -151,52 +160,44 @@ async def _(bot: Bot, notice: NoticeEvent):
     # 发送的是文件
     if notice.notice_type == 'offline_file':
 
-        from_id = notice.user_id
+        qq_num = notice.user_id
+        if qq_num in user_dao.get_blacklist(conn):
+            return
         file_name = notice.file['name']
 
         # 查询用户数据
-        user_info = user_dao.select_by_qq_num(c, from_id)
+        user_info = user_dao.select_by_qq_num(conn, qq_num)  # (('123',),)
         if user_info is None:
-            user_id = snowflake.client.get_guid()
-            is_anonymous = 0
-            user_dao.save(c, user_id, from_id)
-            conn.commit()
-        else:
-            is_anonymous = user_info[3]
+            user_dao.save(conn, qq_num, None)
 
-        message_id = snowflake.client.get_guid()
         message_save = {
-            'id': message_id,
             'message_num': message_num,
-            'message_id_qq': None,
-            'qq_num': from_id,
+            'tencent_id': None,
+            'user_qq_num': qq_num,
             'message_type': 2,
             'content': None,
             'file_root': file_name,
-            'is_anonymous': is_anonymous,
         }
-        message_dao.save(c, **message_save)
+        message_dao.save(conn, **message_save)
+        logger.info(f'发送文件 | qq_num={qq_num} filename={file_name}')
 
-        if is_anonymous:
-            send_file_name = file_name
-        else:
-            send_file_name = f'_by_{from_id}.'.join(file_name.rsplit('.', 1))
+        send_file_name = f'_by_{qq_num}.'.join(file_name.rsplit('.', 1))
 
         file_url = notice.file['url']
         resp = requests.get(file_url)
-        with open(f'./data/sendMessageToGroup/file/{send_file_name}', mode='wb') as f:
+        with open(f'./file/{send_file_name}', mode='wb') as f:
             f.write(resp.content)
 
         # 接下来直接调用的 go-cqhttp 的接口 具体在 README.md 里面有讲
-        for gid in config['forwarder_destination_group']:
+        for gid in get_target_group_num(conn):
             await bot.call_api('upload_group_file',
                                group_id=gid,
-                               file=f'{os.path.abspath(f"./data/sendMessageToGroup/file/{send_file_name}")}',
-                               name=file_name)
+                               file=f'{os.path.abspath(f"./file/{send_file_name}")}',
+                               name=send_file_name)
 
 
-@recall_msg_matcher.handle()
-async def matching_recall_msg(bot: Bot, event: FriendRecallNoticeEvent):
+@revoke_msg_matcher.handle()
+async def matching_revoke_msg(bot: Bot, event: FriendRecallNoticeEvent):
     """
     消息撤回函数
     :param bot:
@@ -204,14 +205,12 @@ async def matching_recall_msg(bot: Bot, event: FriendRecallNoticeEvent):
     :return:
     """
     qq_num = event.user_id
-    msg_id = event.message_id
-    logger.info(f'用户：{qq_num} 撤回消息：{msg_id}')
+    tencent_id = event.message_id
+    logger.info(f'消息撤回 | qq_num={qq_num} msg_id={tencent_id}')
 
-    msg_ids_bot = message_group_dao.get_group_msg_id_by_user_msg_id(c, msg_id)
+    tencent_ids = message_group_dao.get_group_tencent_id_by_user_tencent_id(conn, tencent_id)
 
-    for msg_id_bot in msg_ids_bot:
-        logger.info(msg_id_bot)
-        await bot.delete_msg(message_id=msg_id_bot[0])
+    for tencent_id in tencent_ids:
+        await bot.delete_msg(message_id=tencent_id)
 
-    message_revoke_dao.save(c, [snowflake.client.get_guid(), msg_id])
-    conn.commit()
+    message_revoke_dao.save(conn, tencent_id)
